@@ -12,6 +12,7 @@
 #include <signal.h>
 #include <sys/select.h>
 #include <time.h>
+#include <pthread.h>
 
 #define PORT "19370"
 #define LENGTH 15
@@ -76,58 +77,66 @@ int main(int argc, char *argv[])
     int pos;
     struct sockaddr_in addr_list[10]; // list of hosts that are active and waiting for messages
     unsigned int list_len = 0;        // length of addr_list
-    for (;;)
+    pthread_t reader, writer;
+    void *recv_msgs()
     {
-        FD_ZERO(&readfds);
-        FD_SET(sockfd, &readfds);
-        if ((r = select(sockfd + 1, &readfds, NULL, NULL, &tv)) < 0) //checking if there are new messages
+        for (;;)
         {
-            printf("ERROR: %s\n", strerror(errno));
-        }
-        else if (r > 0)
-        {
-            if ((pos = recvfrom(sockfd, my_str, MAXDATASIZE, 0, (struct sockaddr *)&c, &c_len)) == -1) //
+            FD_ZERO(&readfds);
+            FD_SET(sockfd, &readfds);
+            if ((r = select(sockfd + 1, &readfds, NULL, NULL, &tv)) < 0) // checking if there are new messages
             {
-                perror("Recvfrom");
-                exit(-4);
+                printf("ERROR: %s\n", strerror(errno));
             }
-            my_str[pos] = '\0';
-            unsigned int my_str_len = strlen(my_str);
-            if (my_str_len < LENGTH && my_str_len > 1)
+            else if (r > 0)
             {
-                printf("First message from: %s\n", inet_ntoa(c.sin_addr)); //recieved the first message
-                addr_list[list_len] = c; //adding an address to addr_list
-                list_len++;
-            }
-            else if (my_str_len >= LENGTH)
-            {
-                printf("Recv from %s: %s\n", inet_ntoa(c.sin_addr), my_str);  //recieved a normal message
-            }
-            else
-            {
-                //deleting an address from addr_list
-                char ip_printable[INET_ADDRSTRLEN];
-                char existing_ip[INET_ADDRSTRLEN];
-                memcpy(ip_printable, inet_ntoa(c.sin_addr), INET_ADDRSTRLEN); //copying ip addr which should be deleted to ip_printable
-                printf("Host %s stopped being active\n", ip_printable);
-                unsigned i, j;
-                for (i = 0; i < list_len; i++)
+                if ((pos = recvfrom(sockfd, my_str, MAXDATASIZE, 0, (struct sockaddr *)&c, &c_len)) == -1) //
                 {
-                    memcpy(existing_ip, inet_ntoa(addr_list[i].sin_addr), INET_ADDRSTRLEN); //copying an address from the list to existing_ip
-                    int condition =  !strcmp(ip_printable, existing_ip); //comparing addresses
-                    if (condition){
-                        j = i;
+                    perror("Recvfrom");
+                    exit(-4);
+                }
+                my_str[pos] = '\0';
+                unsigned int my_str_len = strlen(my_str);
+                if (my_str_len < LENGTH && my_str_len > 1)
+                {
+                    printf("First message from: %s\n", inet_ntoa(c.sin_addr)); // recieved the first message
+                    addr_list[list_len] = c;                                   // adding an address to addr_list
+                    list_len++;
+                }
+                else if (my_str_len >= LENGTH)
+                {
+                    printf("Recv from %s: %s\n", inet_ntoa(c.sin_addr), my_str); // recieved a normal message
+                }
+                else
+                {
+                    // deleting an address from addr_list
+                    char ip_printable[INET_ADDRSTRLEN];
+                    char existing_ip[INET_ADDRSTRLEN];
+                    memcpy(ip_printable, inet_ntoa(c.sin_addr), INET_ADDRSTRLEN); // copying ip addr which should be deleted to ip_printable
+                    printf("Host %s stopped being active\n", ip_printable);
+                    unsigned i, j;
+                    for (i = 0; i < list_len; i++)
+                    {
+                        memcpy(existing_ip, inet_ntoa(addr_list[i].sin_addr), INET_ADDRSTRLEN); // copying an address from the list to existing_ip
+                        int condition = !strcmp(ip_printable, existing_ip);                     // comparing addresses
+                        if (condition)
+                        {
+                            j = i;
+                        }
                     }
+                    for (; j < list_len; j++)
+                    {
+                        addr_list[j] = addr_list[j + 1];
+                    }
+                    memset(&addr_list[j + 1], 0, sizeof(struct sockaddr_in)); // cleaning memory
+                    list_len--;
                 }
-                for (; j < list_len; j++)
-                {
-                    addr_list[j] = addr_list[j + 1];
-                }
-                memset(&addr_list[j+1], 0, sizeof(struct sockaddr_in)); //cleaning memory
-                list_len--;
             }
         }
-        else
+    }
+    void *send_msgs()
+    {
+        for (;;)
         {
             if (list_len > 0)
             {
@@ -143,16 +152,22 @@ int main(int argc, char *argv[])
                     exit(1);
                 }
             }
+            usleep(100000 + rand() % 1610000); // waiting for an appropriate period of time
         }
-
-        /*for (unsigned int k = 0; k < list_len; k++)
-        {
-            printf("%s\n", inet_ntoa(addr_list[k].sin_addr)); //print all active hosts
-        }*/
-        
-        usleep(100000 + rand() % 1610000); // waiting for an appropriate period of time
     }
-
+    int rw, rr;
+    if (rw = pthread_create(&writer, NULL, recv_msgs, NULL))
+    {
+        printf("Error:unable to create rcv thread, %d\n", rw);
+        exit(-1);
+    }
+    if (rr = pthread_create(&reader, NULL, send_msgs, NULL))
+    {
+        printf("Error:unable to create send thread, %d\n", rw);
+        exit(-1);
+    }
+    pthread_join(writer, NULL);
+    pthread_join(reader, NULL);
     close(sockfd);
     return 0;
 }
