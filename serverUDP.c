@@ -163,7 +163,7 @@ int main(int argc, char *argv[])
     }
     if (rr = pthread_create(&reader, NULL, send_msgs, NULL))
     {
-        printf("Error:unable to create send thread, %d\n", rw);
+        printf("Error:unable to create send thread, %d\n", rr);
         exit(-1);
     }
     pthread_join(writer, NULL);
